@@ -1,0 +1,36 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Build / publish
+publish/
+artifacts/
+TestResults/
+
+# Runtime data
+screenshots/
+WebView2Profile/
+*.log
+
+# Local backups / staging
+backup-ui-*/
+*-UI-Backups/
+*-staging/
+ui-v*/
+layout-*/
+spacious-*/
+structural-*/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

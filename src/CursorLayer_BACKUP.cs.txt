@@ -1,0 +1,105 @@
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace GhostCursorV6;
+
+internal sealed class CursorLayer : Form
+{
+    private readonly IntPtr arrowCopy;
+    private readonly System.Windows.Forms.Timer follow = new() { Interval = 15 };
+    internal bool Ready { get; private set; }
+    internal bool GhostEnabled { get; private set; }
+
+    public CursorLayer()
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        TopMost = true;
+        BackColor = Color.Magenta;
+        TransparencyKey = Color.Magenta;
+        Size = SystemInformation.CursorSize;
+        arrowCopy = Native.CopyIcon(Native.LoadCursorW(IntPtr.Zero, (IntPtr)32512));
+        if (arrowCopy == IntPtr.Zero) throw new InvalidOperationException("Cannot copy system pointer");
+        follow.Tick += (_, _) => { if (GhostEnabled) Location = System.Windows.Forms.Cursor.Position; };
+    }
+
+    protected override bool ShowWithoutActivation => true;
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var p = base.CreateParams;
+            p.ExStyle |= unchecked((int)(Native.WS_EX_TRANSPARENT | Native.WS_EX_NOACTIVATE));
+            return p;
+        }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Ready = Native.Exclude(Handle);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == Native.WM_NCHITTEST) { m.Result = (IntPtr)Native.HTTRANSPARENT; return; }
+        if (m.Msg == Native.WM_MOUSEACTIVATE) { m.Result = (IntPtr)Native.MA_NOACTIVATE; return; }
+        base.WndProc(ref m);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if (arrowCopy != IntPtr.Zero)
+        {
+            using var img = Icon.FromHandle(arrowCopy);
+            e.Graphics.DrawIcon(img, new Rectangle(Point.Empty, Size));
+        }
+    }
+
+    internal bool Enable()
+    {
+        if (GhostEnabled) return true;
+        if (!Ready) return false;
+        // All mask pixels use AND=1, XOR=0: preserve the desktop beneath the pointer.
+        foreach (var id in Native.CursorIds)
+        {
+            byte[] andMask = new byte[128], xorMask = new byte[128];
+            Array.Fill(andMask, (byte)0xFF);
+            IntPtr empty = Native.CreateCursor(IntPtr.Zero, 0, 0, 32, 32, andMask, xorMask);
+            if (empty == IntPtr.Zero) { Native.Restore(); return false; }
+            if (!Native.SetSystemCursor(empty, (uint)id))
+            {
+                Native.DestroyCursor(empty);
+                Native.Restore();
+                return false;
+            }
+            // SetSystemCursor owns and destroys a successfully installed HCURSOR.
+        }
+        GhostEnabled = true;
+        Location = System.Windows.Forms.Cursor.Position;
+        Show();
+        follow.Start();
+        return true;
+    }
+
+    internal void Disable()
+    {
+        follow.Stop();
+        GhostEnabled = false;
+        Hide();
+        Native.Restore();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Disable();
+            follow.Dispose();
+            if (arrowCopy != IntPtr.Zero) Native.DestroyIcon(arrowCopy);
+        }
+        base.Dispose(disposing);
+    }
+}
